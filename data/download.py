@@ -98,6 +98,7 @@ def download_video(name, video_id, segments_file_path, output_dir):
 
 def download_all(input_dir, output_dir):
     names = os.listdir(input_dir)
+    names.sort()
 
     name_cnt = 0
     names_pbar = tqdm(names, desc="Downloading audio for {0}".format(names[0]))
@@ -113,6 +114,7 @@ def download_all(input_dir, output_dir):
             continue
 
         videos = os.listdir(os.path.join(input_dir, name))
+        videos.sort()
 
         video_cnt = 0
         videos_pbar = tqdm(
