@@ -23,11 +23,14 @@ def download_video(name, video_id, segments_file_path, output_dir):
     youtube_url = "https://www.youtube.com/watch?v=" + video_id
     audio_stream_url = None
     try:
-        audio_stream_url_bytes = subprocess.check_output(["youtube-dl",
-                                                          "-f",
-                                                          "bestaudio",
-                                                          "-g",
-                                                          youtube_url])
+        audio_stream_url_bytes = subprocess.check_output(
+            ["youtube-dl",
+             "--restrict-filenames",
+             "-f",
+             "bestaudio",
+             "-g",
+             youtube_url],
+            stderr=FNULL)
         audio_stream_url = audio_stream_url_bytes.decode("utf-8").rstrip()
         audio_stream_url = urllib.parse.unquote(audio_stream_url)
     except subprocess.CalledProcessError:
