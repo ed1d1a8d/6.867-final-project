@@ -5,7 +5,7 @@ We have written a script to assist in downloading the data.
 The script requires:
 
 * Python 3.5+
-* [tqdm](https://github.com/tqdm/tqdm)
+* [tqdm==4.17.1](https://github.com/tqdm/tqdm)
 * [youtube-dl](https://github.com/rg3/youtube-dl)
 * [ffmpeg](https://www.ffmpeg.org/)
 
