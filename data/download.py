@@ -106,11 +106,11 @@ def download_all(input_dir, output_dir):
     for name in names_pbar:
         try:
             os.mkdir(os.path.join(output_dir, name))
-            names_pbar.set_postfix(folder_created=False)
-            names_pbar.refresh()
         except FileExistsError:
-            names_pbar.set_postfix(folder_created=True)
-            names_pbar.refresh()
+            name_cnt = name_cnt + 1
+            if name_cnt < len(names):
+                names_pbar.set_description(
+                    "Downloading audio for {0}".format(names[name_cnt]))
             continue
 
         videos = os.listdir(os.path.join(input_dir, name))
