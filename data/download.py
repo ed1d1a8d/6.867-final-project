@@ -32,12 +32,11 @@ def download_video(name, video_id, segments_file_path, output_dir):
              youtube_url],
             stderr=FNULL)
         audio_stream_url = audio_stream_url_bytes.decode("utf-8").rstrip()
-        audio_stream_url = urllib.parse.unquote(audio_stream_url)
     except subprocess.CalledProcessError:
         log_error("Failed to get url for {0}.".format(
             os.path.join(name, video_id)))
         return
-    audio_format = audio_stream_url.replace(
+    audio_format = urllib.parse.unquote(audio_stream_url).replace(
         "=", "/").replace("&", "/").split("mime/audio/")[1].split("/")[0]
 
     output_dir = os.path.join(output_dir, video_id)
