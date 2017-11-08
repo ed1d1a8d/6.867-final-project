@@ -28,13 +28,13 @@ def graph_spectrogram(fp):
                 pad_inches=0) # Spectrogram saved as a .png 
 
 
-def spectrogram(fp):
+def spectrogram(fp, period_secs = 0.5):
     sample_rate, samples = get_data(fp)
-    frequencies, times, spectrogram = signal.spectrogram(samples, sample_rate)
+    frequencies, times, spectrogram = signal.spectrogram(samples, period_secs*sample_rate)
     return frequencies, times, spectrogram
 
 if __name__ == '__main__':
     frequencies, times, spectrogram = spectrogram(fp)
-    plt.pcolormesh(times, frequencies, spectrogram)
+    plt.imshow(spectrogram, aspect='auto', cmap='hot_r', origin='lower')
     plt.show()
 
