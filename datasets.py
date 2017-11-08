@@ -6,4 +6,4 @@ names = os.listdir( path )
 names = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
 
 for name in names:
-   print(name, len(os.listdir(path + '/' + name)))d
+    print(name, len(os.listdir(path + '/' + name)))
