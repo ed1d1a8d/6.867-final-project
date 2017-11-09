@@ -8,7 +8,8 @@ testAmt = 0.30
 
 # Open a file
 path = "/Users/nicholasguo/Downloads/voxceleb1_wav" # TODO change this to whatever you need
-names = os.listdir( path )
+
+# if you want to manually pick the people, set names to the list of names you want in the format "First_Last"
 names = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d))]
 
 def numFiles(name):
