@@ -1,3 +1,12 @@
+import torch
+import torch.autograd as autograd
+import torch.nn as nn
+import torch.optim as optim
+import torch.utils.data as data_utils
+
+dtype = torch.cuda.FloatTensor
+
+
 # Based off of http://pytorch.org/tutorials/beginner/nlp/sequence_models_tutorial.html
 class LSTMVoice(nn.Module):
 
