@@ -19,21 +19,21 @@ NUM_PEOPLE = 10
 AUDIO_LENGTH = 128 * 3 # Around 128 columns in spectrogram is one second
 AUDIO_GAP = 128 // 2 # Gap of half a second
 
-def get_audio_and_speakers(names, audio_clip_paths):
+def get_audio_and_speakers():
     global NUM_PEOPLE, AUDIO_LENGTH, AUDIO_GAP
 
     names, audio_clip_paths = get_names_and_clip_paths()
 
-    audio_speaker = []
+    audio_speakers = []
     for idx, name in enumerate(names[:NUM_PEOPLE]):
-        print(name)
+        print('Generating spectrograms for', name)
         for audio_clip in audio_clip_paths[name]:
             base_spec = spectrogram.get_spectrogram('/'.join([VCB_PATH, name, audio_clip]))
             length = base_spec.shape[1]
             for start in range(0, length - AUDIO_LENGTH + 1, AUDIO_GAP):
                 spec = base_spec[:, start : start + AUDIO_LENGTH]
-                audio_speaker.append((spec, idx))
+                audio_speakers.append((spec, idx))
 
-    random.shuffle(audio_speaker)
-    audio, speaker = zip(*audio_speaker)
-    return audio, speaker
+    random.shuffle(audio_speakers)
+    audio, speakers = zip(*audio_speakers)
+    return audio, speakers
