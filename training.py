@@ -67,7 +67,7 @@ running_loss = 0.0
 
 NUM_EPOCHS = 5
 for epoch in range(NUM_EPOCHS):
-    print 'training epoch', epoch+1
+    print('training epoch', epoch+1)
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
         inputs, labels = data
