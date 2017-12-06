@@ -1,33 +1,39 @@
-import numpy as np
-#import matplotlib.pyplot as plt
-import librosa
-#import librosa.display
-
 import os, sys
+from notebooks.utils import spectrogram
+import random
 
 VCB_PATH = "/home/ubuntu/data/voxceleb1_wav"
-def get_names_and_clips():
+def get_names_and_clip_paths():
     global VCB_PATH
     names = [d for d in os.listdir(VCB_PATH) if os.path.isdir(os.path.join(VCB_PATH, d))]
 
-    audio_clips = {}
+    audio_clip_paths = {}
     for name in names:
-        audio_clips[name] = os.listdir(VCB_PATH + '/' + name)
+        audio_clip_paths[name] = os.listdir(VCB_PATH + '/' + name)
 
-    names = sorted(names, key=lambda name : -len(audio_clips[name]))
+    names = sorted(names, key=lambda name : -len(audio_clip_paths[name]))
 
-    return names, audio_clips
-    
-    #print(names[:10])
-    #print(audio_clips[names[0]])
+    return names, audio_clip_paths
 
+NUM_PEOPLE = 10
+AUDIO_LENGTH = 128 * 3 # Around 128 columns in spectrogram is one second
+AUDIO_GAP = 128 // 2 # Gap of half a second
 
-    #audio_path = '/'.join([VCB_PATH, names[0], audio_clips[names[0]][0]])
-    #print(audio_path)
-    
+def get_audio_and_speakers(names, audio_clip_paths):
+    global NUM_PEOPLE, AUDIO_LENGTH, AUDIO_GAP
 
+    names, audio_clip_paths = get_names_and_clip_paths()
 
+    audio_speaker = []
+    for idx, name in enumerate(names[:NUM_PEOPLE]):
+        print(name)
+        for audio_clip in audio_clip_paths[name]:
+            base_spec = spectrogram.get_spectrogram('/'.join([VCB_PATH, name, audio_clip]))
+            length = base_spec.shape[1]
+            for start in range(0, length - AUDIO_LENGTH + 1, AUDIO_GAP):
+                spec = base_spec[:, start : start + AUDIO_LENGTH]
+                audio_speaker.append((spec, idx))
 
-
-
-
+    random.shuffle(audio_speaker)
+    audio, speaker = zip(*audio_speaker)
+    return audio, speaker
