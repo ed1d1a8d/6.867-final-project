@@ -93,3 +93,6 @@ for epoch in range(NUM_EPOCHS):
                   (epoch + 1, i + 1, running_loss / 100))
             running_loss = 0.0
 
+print("Train:", evaluate(model, audio_train, speaker_train))
+print("Val:", evaluate(model, audio_val, speaker_val))
+print("Test:", evaluate(model, audio_test, speaker_test))
