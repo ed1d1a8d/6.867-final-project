@@ -19,10 +19,12 @@ NUM_PEOPLE = 10
 AUDIO_LENGTH = 128 * 3 # Around 128 columns in spectrogram is one second
 AUDIO_GAP = 128 // 2 # Gap of half a second
 
-def get_audio_and_speakers():
+def get_audio_and_speakers(names, audio_clip_paths):
+    """Generate spectrogram for each of the audio clips
+    for each name. Returns list of spectrograms and list
+    of IDs for their corresponding names in random order.
+    """
     global NUM_PEOPLE, AUDIO_LENGTH, AUDIO_GAP
-
-    names, audio_clip_paths = get_names_and_clip_paths()
 
     audio_speakers = []
     for idx, name in enumerate(names[:NUM_PEOPLE]):
