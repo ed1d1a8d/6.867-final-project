@@ -3,13 +3,9 @@ import torch.autograd as autograd
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data_utils
-from get_data import get_names_and_clip_paths, get_audio_and_speakers
-from model import LSTMVoice
+from get_data import get_names_and_clip_paths, get_audio_and_speakers, NUM_PEOPLE
+from model import LSTMVoice, dtype
 
-INPUT_DIM = 128
-HIDDEN_DIM = 256
-DEPTH = 1
-BATCH_SIZE = 64
 
 audio, speaker = get_audio_and_speakers(*get_names_and_clip_paths())
 
@@ -54,6 +50,11 @@ def evaluate(model, audio, speaker):
 
     return correct * 1.0 / total
 
+INPUT_DIM = 128
+HIDDEN_DIM = 256
+DEPTH = 1
+BATCH_SIZE = 64
+
 
 model = LSTMVoice(INPUT_DIM, HIDDEN_DIM, DEPTH, BATCH_SIZE, NUM_PEOPLE)
 model = model.cuda()
@@ -66,6 +67,7 @@ running_loss = 0.0
 
 NUM_EPOCHS = 5
 for epoch in range(NUM_EPOCHS):
+    print 'training epoch', epoch+1
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
         inputs, labels = data
