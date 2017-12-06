@@ -3,11 +3,12 @@ import torch.autograd as autograd
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as data_utils
-from get_data import get_names_and_clip_paths, get_audio_and_speakers, NUM_PEOPLE
+from get_data import get_audio_and_speakers
 from model import LSTMVoice, dtype
 
+NUM_PEOPLE = 10
 
-audio, speaker = get_audio_and_speakers(*get_names_and_clip_paths())
+audio, speaker = get_audio_and_speakers(NUM_PEOPLE)
 
 total_dataset_size = len(audio)
 
