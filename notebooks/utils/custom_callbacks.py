@@ -15,7 +15,7 @@ import warnings
 from collections import deque
 from collections import OrderedDict
 from collections import Iterable
-from .utils.generic_utils import Progbar
+from keras.utils.generic_utils import Progbar
 from keras import backend as K
 
 try:
