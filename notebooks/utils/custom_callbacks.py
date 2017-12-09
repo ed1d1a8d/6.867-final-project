@@ -748,6 +748,10 @@ class TensorBoard(Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
+
+        if not self.validation_data and self.histogram_freq:
+            raise ValueError('If printing histograms, validation_data must be '
+                             'provided, and cannot be a generator.')
         if self.validation_data and self.histogram_freq:
             if epoch % self.histogram_freq == 0:
 
@@ -764,16 +768,17 @@ class TensorBoard(Callback):
                 i = 0
                 while i < val_size:
                     step = min(self.batch_size, val_size - i)
-                    batch_val = []
-                    batch_val.append(val_data[0][i:i + step])
-                    batch_val.append(val_data[1][i:i + step])
-                    batch_val.append(val_data[2][i:i + step])
                     if self.model.uses_learning_phase:
-                        batch_val.append(val_data[3])
+                        # do not slice the learning phase
+                        batch_val = [x[i:i + step] for x in val_data[:-1]]
+                        batch_val.append(val_data[-1])
+                    else:
+                        batch_val = [x[i:i + step] for x in val_data]
+                    assert len(batch_val) == len(tensors)
                     feed_dict = dict(zip(tensors, batch_val))
                     result = self.sess.run([self.merged], feed_dict=feed_dict)
                     summary_str = result[0]
-                    self.writer.add_summary(summary_str, self.seen)
+                    self.writer.add_summary(summary_str, epoch)
                     i += self.batch_size
 
         if self.embeddings_freq and self.embeddings_ckpt_path:
@@ -789,9 +794,8 @@ class TensorBoard(Callback):
             summary_value = summary.value.add()
             summary_value.simple_value = value.item()
             summary_value.tag = name
-            self.writer.add_summary(summary, self.seen)
+            self.writer.add_summary(summary, epoch)
         self.writer.flush()
-        self.seen += self.batch_size
 
     def on_train_end(self, _):
         self.writer.close()
