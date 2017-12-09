@@ -787,6 +787,15 @@ class TensorBoard(Callback):
                                 self.embeddings_ckpt_path,
                                 epoch)
         
+        for name, value in logs.items():
+            if name in ['batch', 'size']:
+                continue
+            summary = tf.Summary()
+            summary_value = summary.value.add()
+            summary_value.simple_value = value.item()
+            summary_value.tag = name
+            self.writer.add_summary(summary, self.seen)
+        
         self.writer.flush()
 
     def on_train_end(self, _):
