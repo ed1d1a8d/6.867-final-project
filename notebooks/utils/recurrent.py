@@ -20,6 +20,7 @@ from keras.utils.generic_utils import has_arg
 from keras.legacy.layers import Recurrent
 from keras.legacy import interfaces
 
+import tensorflow as tf
 
 class StackedRNNCells(Layer):
     """Wrapper allowing a stack of RNN cells to behave as a single cell.
@@ -1139,12 +1140,15 @@ class SimpleRNN(RNN):
 ### "Layer Normalization", https://arxiv.org/pdf/1607.06450.pdf
 ###
 ### Both implementations are modified for recurrent dropout.
-### Only implementation == 1 is modified for layer normalization.
+### Only implementation == 2 is modified for layer normalization.
 ###
 ### Implementation based on
 ### https://github.com/cleemesser/keras-layer-norm-work/blob/master/lstm-layer-normalization-in-progress.ipynb
 ### and
 ### https://gist.github.com/udibr/7f46e790c9e342d75dcbd9b1deb9d940
+
+### From https://github.com/MycChiu/fast-LayerNorm-TF
+from .layer_norm_fused_layer import layer_norm_custom
 
 class GRUCell(Layer):
     """Cell class for the GRU layer.
@@ -1248,7 +1252,7 @@ class GRUCell(Layer):
         self._dropout_mask = None
         self._recurrent_dropout_mask = None
         
-        assert not (use_ln and (implementation == 2))
+        assert implementation == 2
         assert not (use_ln and use_bias)
         
 
@@ -1305,33 +1309,21 @@ class GRUCell(Layer):
             self.bias_h = None
             
         if self.use_ln:
-            self.ln_scale_z = self.ln_scale[:self.units]
-            self.ln_scale_r = self.ln_scale[self.units: self.units * 2]
-            self.ln_scale_h = self.ln_scale[self.units * 2: self.units * 3]
-            self.ln_scale_rz = self.ln_scale[self.units * 3: self.units * 4]
-            self.ln_scale_rr = self.ln_scale[self.units * 4: self.units * 5]
-            self.ln_scale_rh = self.ln_scale[self.units * 5:]
+            self.ln_scale_x = self.ln_scale[:self.units * 3]
+            self.ln_scale_r = self.ln_scale[self.units * 3: self.units * 5]
+            self.ln_scale_h = self.ln_scale[self.units * 5:]
             
-            self.ln_bias_z = self.ln_bias[:self.units]
-            self.ln_bias_r = self.ln_bias[self.units: self.units * 2]
-            self.ln_bias_h = self.ln_bias[self.units * 2: self.units * 3]
-            self.ln_bias_rz = self.ln_bias[self.units * 3: self.units * 4]
-            self.ln_bias_rr = self.ln_bias[self.units * 4: self.units * 5]
-            self.ln_bias_rh = self.ln_bias[self.units * 5:]
+            self.ln_bias_x = self.ln_bias[:self.units * 3]
+            self.ln_bias_r = self.ln_bias[self.units * 3: self.units * 5]
+            self.ln_bias_h = self.ln_bias[self.units * 5:]
         else:
-            self.ln_scale_z = None
+            self.ln_scale_x = None
             self.ln_scale_r = None
             self.ln_scale_h = None
-            self.ln_scale_rz = None
-            self.ln_scale_rr = None
-            self.ln_scale_rh = None
             
-            self.ln_bias_z = None
+            self.ln_bias_x = None
             self.ln_bias_r = None
             self.ln_bias_h = None
-            self.ln_bias_rz = None
-            self.ln_bias_rr = None
-            self.ln_bias_rh = None
         
         self.built = True
 
@@ -1365,12 +1357,11 @@ class GRUCell(Layer):
         else:
             self._recurrent_dropout_mask = None
 
-    def laynorm(self, x, scale, bias):
-        m = K.mean(x, axis=-1, keepdims=True)
-        std = K.sqrt(K.var(x, axis=-1, keepdims=True) + self.ln_epsilon) # not using K.std for _eps stability
-        output = (x - m) / (std + self.ln_epsilon)
-        output = K.bias_add(scale * output, bias)
-        return output
+    #def laynorm(self, x, scale, bias):
+    #    m = K.mean(x, axis=-1, keepdims=True)
+    #    std = K.sqrt(K.var(x, axis=-1, keepdims=True) + self.ln_epsilon) # not using K.std for _eps stability
+    #    output = (x - m) / (std + self.ln_epsilon)
+    #    return K.bias_add(scale * output, bias)
             
     def call(self, inputs, states, training=None):
         h_tm1 = states[0]  # previous memory
@@ -1379,34 +1370,36 @@ class GRUCell(Layer):
         dp_mask = self._dropout_mask
         # dropout matrices for recurrent units
         rec_dp_mask = self._recurrent_dropout_mask
-
-        if self.implementation == 1:
+        
+        if self.use_ln:
             if 0. < self.dropout < 1.:
-                inputs_z = inputs * dp_mask[0]
-                inputs_r = inputs * dp_mask[1]
-                inputs_h = inputs * dp_mask[2]
-            else:
-                inputs_z = inputs
-                inputs_r = inputs
-                inputs_h = inputs
-                
-            x_z = self.laynorm(K.dot(inputs_z, self.kernel_z), self.ln_scale_z, self.ln_bias_z)
-            x_r = self.laynorm(K.dot(inputs_r, self.kernel_r), self.ln_scale_r, self.ln_bias_r)
-            x_h = self.laynorm(K.dot(inputs_h, self.kernel_h), self.ln_scale_h, self.ln_bias_h)
+                inputs *= dp_mask[0]
+            #matrix_x = self.laynorm(K.dot(inputs, self.kernel),
+            #                        self.ln_scale_x, self.ln_bias_x)
+            matrix_x = (layer_norm_custom(K.dot(inputs, self.kernel), epsilon=self.ln_epsilon)
+                        * self.ln_scale_x + self.ln_bias_x)
+            
             
             if self.use_bias:
-                x_z = K.bias_add(x_z, self.bias_z)
-                x_r = K.bias_add(x_r, self.bias_r)
-                x_h = K.bias_add(x_h, self.bias_h)
+                matrix_x = K.bias_add(matrix_x, self.bias)
 
-            z = self.recurrent_activation(x_z +
-                    self.laynorm(K.dot(h_tm1, self.recurrent_kernel_z), self.ln_scale_rz, self.ln_bias_rz))
-            
-            r = self.recurrent_activation(x_r +
-                   self.laynorm(K.dot(h_tm1, self.recurrent_kernel_r), self.ln_scale_rr, self.ln_bias_rr))
-            
-            hh = self.activation(x_h +
-                     r * self.laynorm(K.dot(h_tm1, self.recurrent_kernel_h), self.ln_scale_rh, self.ln_bias_rh))
+            matrix_inner = (layer_norm_custom(
+                K.dot(h_tm1, self.recurrent_kernel[:, :2 * self.units]), epsilon=self.ln_epsilon)
+                * self.ln_scale_r + self.ln_bias_r)
+
+            x_z = matrix_x[:, :self.units]
+            x_r = matrix_x[:, self.units: 2 * self.units]
+            recurrent_z = matrix_inner[:, :self.units]
+            recurrent_r = matrix_inner[:, self.units: 2 * self.units]
+
+            z = self.recurrent_activation(x_z + recurrent_z)
+            r = self.recurrent_activation(x_r + recurrent_r)
+
+            x_h = matrix_x[:, 2 * self.units:]
+            recurrent_h = r * (layer_norm_custom(
+                K.dot(h_tm1, self.recurrent_kernel[:, 2 * self.units:]), epsilon=self.ln_epsilon)
+                * self.ln_scale_h + self.ln_bias_h)
+            hh = self.activation(x_h + recurrent_h)
         else:
             if 0. < self.dropout < 1.:
                 inputs *= dp_mask[0]
@@ -1522,6 +1515,7 @@ class GRU(RNN):
                  recurrent_activation='hard_sigmoid',
                  use_bias=True,
                  use_ln=False,
+                 ln_epsilon=1e-5,
                  kernel_initializer='glorot_uniform',
                  recurrent_initializer='orthogonal',
                  bias_initializer='zeros',
@@ -1563,6 +1557,7 @@ class GRU(RNN):
                        recurrent_activation=recurrent_activation,
                        use_bias=use_bias,
                        use_ln=use_ln,
+                       ln_epsilon=ln_epsilon,
                        kernel_initializer=kernel_initializer,
                        recurrent_initializer=recurrent_initializer,
                        bias_initializer=bias_initializer,
