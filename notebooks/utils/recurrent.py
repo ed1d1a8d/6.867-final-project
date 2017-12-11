@@ -1325,16 +1325,13 @@ class GRUCell(Layer):
                 x_r = K.bias_add(x_r, self.bias_r)
                 x_h = K.bias_add(x_h, self.bias_h)
 
-            h_tm1_z = h_tm1
-            h_tm1_r = h_tm1
-            h_tm1_h = h_tm1
-            z = self.recurrent_activation(x_z + K.dot(h_tm1_z,
+            z = self.recurrent_activation(x_z + K.dot(h_tm1,
                                                       self.recurrent_kernel_z))
             
-            r = self.recurrent_activation(x_r + K.dot(h_tm1_r,
+            r = self.recurrent_activation(x_r + K.dot(h_tm1,
                                                       self.recurrent_kernel_r))
             
-            hh = self.activation(x_h + K.dot(r * h_tm1_h,
+            hh = self.activation(x_h + K.dot(r * h_tm1,
                                              self.recurrent_kernel_h))
         else:
             if 0. < self.dropout < 1.:
@@ -1342,8 +1339,6 @@ class GRUCell(Layer):
             matrix_x = K.dot(inputs, self.kernel)
             if self.use_bias:
                 matrix_x = K.bias_add(matrix_x, self.bias)
-            if 0. < self.recurrent_dropout < 1.:
-                h_tm1 *= rec_dp_mask[0]
             matrix_inner = K.dot(h_tm1,
                                  self.recurrent_kernel[:, :2 * self.units])
 
@@ -1359,10 +1354,12 @@ class GRUCell(Layer):
             recurrent_h = K.dot(r * h_tm1,
                                 self.recurrent_kernel[:, 2 * self.units:])
             hh = self.activation(x_h + recurrent_h)
+        
         if 0. < self.recurrent_dropout < 1.:
             h = z * h_tm1 + (1 - z) * hh * rec_dp_mask
         else:
             h = z * h_tm1 + (1 - z) * hh
+        
         if 0 < self.dropout + self.recurrent_dropout:
             if training is None:
                 h._uses_learning_phase = True
