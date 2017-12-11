@@ -1,4 +1,6 @@
 # Code from Keras 2.1.2
+# GRUCell.call and GRUCell._generate_recurrent_dropout_mask are modified
+
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import numpy as np
@@ -1289,11 +1291,10 @@ class GRUCell(Layer):
             def dropped_inputs():
                 return K.dropout(ones, self.dropout)
 
-            self._recurrent_dropout_mask = [K.in_train_phase(
+            self._recurrent_dropout_mask = K.in_train_phase(
                 dropped_inputs,
                 ones,
                 training=training)
-                for _ in range(3)]
         else:
             self._recurrent_dropout_mask = None
 
@@ -1305,6 +1306,8 @@ class GRUCell(Layer):
         # dropout matrices for recurrent units
         rec_dp_mask = self._recurrent_dropout_mask
 
+        ### BASED ON "Recurrent Dropout without Memory Loss" ###
+        ### https://arxiv.org/pdf/1603.05118.pdf ###
         if self.implementation == 1:
             if 0. < self.dropout < 1.:
                 inputs_z = inputs * dp_mask[0]
@@ -1322,19 +1325,15 @@ class GRUCell(Layer):
                 x_r = K.bias_add(x_r, self.bias_r)
                 x_h = K.bias_add(x_h, self.bias_h)
 
-            if 0. < self.recurrent_dropout < 1.:
-                h_tm1_z = h_tm1 * rec_dp_mask[0]
-                h_tm1_r = h_tm1 * rec_dp_mask[1]
-                h_tm1_h = h_tm1 * rec_dp_mask[2]
-            else:
-                h_tm1_z = h_tm1
-                h_tm1_r = h_tm1
-                h_tm1_h = h_tm1
+            h_tm1_z = h_tm1
+            h_tm1_r = h_tm1
+            h_tm1_h = h_tm1
             z = self.recurrent_activation(x_z + K.dot(h_tm1_z,
                                                       self.recurrent_kernel_z))
+            
             r = self.recurrent_activation(x_r + K.dot(h_tm1_r,
                                                       self.recurrent_kernel_r))
-
+            
             hh = self.activation(x_h + K.dot(r * h_tm1_h,
                                              self.recurrent_kernel_h))
         else:
@@ -1360,7 +1359,10 @@ class GRUCell(Layer):
             recurrent_h = K.dot(r * h_tm1,
                                 self.recurrent_kernel[:, 2 * self.units:])
             hh = self.activation(x_h + recurrent_h)
-        h = z * h_tm1 + (1 - z) * hh
+        if 0. < self.recurrent_dropout < 1.:
+            h = z * h_tm1 + (1 - z) * hh * rec_dp_mask
+        else:
+            h = z * h_tm1 + (1 - z) * hh
         if 0 < self.dropout + self.recurrent_dropout:
             if training is None:
                 h._uses_learning_phase = True
