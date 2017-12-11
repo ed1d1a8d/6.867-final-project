@@ -1,5 +1,6 @@
 # Code from Keras 2.1.2
-# GRUCell.call and GRUCell._generate_recurrent_dropout_mask are modified
+# GRUCell is modified
+# GRU is modified a little bit to match initialization arguments
 
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
@@ -1132,6 +1133,19 @@ class SimpleRNN(RNN):
         return cls(**config)
 
 
+### Theory based on
+### "Recurrent Dropout without Memory Loss", https://arxiv.org/pdf/1603.05118.pdf
+### and
+### "Layer Normalization", https://arxiv.org/pdf/1607.06450.pdf
+###
+### Both implementations are modified for recurrent dropout.
+### Only implementation == 1 is modified for layer normalization.
+###
+### Implementation based on
+### https://github.com/cleemesser/keras-layer-norm-work/blob/master/lstm-layer-normalization-in-progress.ipynb
+### and
+### https://gist.github.com/udibr/7f46e790c9e342d75dcbd9b1deb9d940
+
 class GRUCell(Layer):
     """Cell class for the GRU layer.
 
@@ -1188,9 +1202,13 @@ class GRUCell(Layer):
                  activation='tanh',
                  recurrent_activation='hard_sigmoid',
                  use_bias=True,
+                 use_ln=False,
+                 ln_epsilon=1e-5,
                  kernel_initializer='glorot_uniform',
                  recurrent_initializer='orthogonal',
                  bias_initializer='zeros',
+                 ln_scale_initializer='ones',
+                 ln_bias_initializer='zeros',
                  kernel_regularizer=None,
                  recurrent_regularizer=None,
                  bias_regularizer=None,
@@ -1206,10 +1224,14 @@ class GRUCell(Layer):
         self.activation = activations.get(activation)
         self.recurrent_activation = activations.get(recurrent_activation)
         self.use_bias = use_bias
+        self.use_ln = use_ln
+        self.ln_epsilon = ln_epsilon
 
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.recurrent_initializer = initializers.get(recurrent_initializer)
         self.bias_initializer = initializers.get(bias_initializer)
+        self.ln_scale_initializer = initializers.get(ln_scale_initializer)
+        self.ln_bias_initializer = initializers.get(ln_bias_initializer)
 
         self.kernel_regularizer = regularizers.get(kernel_regularizer)
         self.recurrent_regularizer = regularizers.get(recurrent_regularizer)
@@ -1225,6 +1247,10 @@ class GRUCell(Layer):
         self.state_size = self.units
         self._dropout_mask = None
         self._recurrent_dropout_mask = None
+        
+        assert not (use_ln and (implementation == 2))
+        assert not (use_ln and use_bias)
+        
 
     def build(self, input_shape):
         input_dim = input_shape[-1]
@@ -1248,6 +1274,17 @@ class GRUCell(Layer):
                                         constraint=self.bias_constraint)
         else:
             self.bias = None
+        
+        if self.use_ln:
+            self.ln_scale = self.add_weight(shape=(self.units * 6,),
+                                            name='ln_scale',
+                                            initializer=self.ln_scale_initializer)
+            self.ln_bias = self.add_weight(shape=(self.units * 6,),
+                                           name='ln_bias',
+                                           initializer=self.ln_bias_initializer)
+        else:
+            self.ln_scale = None
+            self.ln_bias = None
 
         self.kernel_z = self.kernel[:, :self.units]
         self.recurrent_kernel_z = self.recurrent_kernel[:, :self.units]
@@ -1266,6 +1303,36 @@ class GRUCell(Layer):
             self.bias_z = None
             self.bias_r = None
             self.bias_h = None
+            
+        if self.use_ln:
+            self.ln_scale_z = self.ln_scale[:self.units]
+            self.ln_scale_r = self.ln_scale[self.units: self.units * 2]
+            self.ln_scale_h = self.ln_scale[self.units * 2: self.units * 3]
+            self.ln_scale_rz = self.ln_scale[self.units * 3: self.units * 4]
+            self.ln_scale_rr = self.ln_scale[self.units * 4: self.units * 5]
+            self.ln_scale_rh = self.ln_scale[self.units * 5:]
+            
+            self.ln_bias_z = self.ln_bias[:self.units]
+            self.ln_bias_r = self.ln_bias[self.units: self.units * 2]
+            self.ln_bias_h = self.ln_bias[self.units * 2: self.units * 3]
+            self.ln_bias_rz = self.ln_bias[self.units * 3: self.units * 4]
+            self.ln_bias_rr = self.ln_bias[self.units * 4: self.units * 5]
+            self.ln_bias_rh = self.ln_bias[self.units * 5:]
+        else:
+            self.ln_scale_z = None
+            self.ln_scale_r = None
+            self.ln_scale_h = None
+            self.ln_scale_rz = None
+            self.ln_scale_rr = None
+            self.ln_scale_rh = None
+            
+            self.ln_bias_z = None
+            self.ln_bias_r = None
+            self.ln_bias_h = None
+            self.ln_bias_rz = None
+            self.ln_bias_rr = None
+            self.ln_bias_rh = None
+        
         self.built = True
 
     def _generate_dropout_mask(self, inputs, training=None):
@@ -1298,6 +1365,13 @@ class GRUCell(Layer):
         else:
             self._recurrent_dropout_mask = None
 
+    def laynorm(self, x, scale, bias):
+        m = K.mean(x, axis=-1, keepdims=True)
+        std = K.sqrt(K.var(x, axis=-1, keepdims=True) + self.ln_epsilon) # not using K.std for _eps stability
+        output = (x - m) / (std + self.ln_epsilon)
+        output = K.bias_add(scale * output, bias)
+        return output
+            
     def call(self, inputs, states, training=None):
         h_tm1 = states[0]  # previous memory
 
@@ -1306,8 +1380,6 @@ class GRUCell(Layer):
         # dropout matrices for recurrent units
         rec_dp_mask = self._recurrent_dropout_mask
 
-        ### BASED ON "Recurrent Dropout without Memory Loss" ###
-        ### https://arxiv.org/pdf/1603.05118.pdf ###
         if self.implementation == 1:
             if 0. < self.dropout < 1.:
                 inputs_z = inputs * dp_mask[0]
@@ -1317,22 +1389,24 @@ class GRUCell(Layer):
                 inputs_z = inputs
                 inputs_r = inputs
                 inputs_h = inputs
-            x_z = K.dot(inputs_z, self.kernel_z)
-            x_r = K.dot(inputs_r, self.kernel_r)
-            x_h = K.dot(inputs_h, self.kernel_h)
+                
+            x_z = self.laynorm(K.dot(inputs_z, self.kernel_z), self.ln_scale_z, self.ln_bias_z)
+            x_r = self.laynorm(K.dot(inputs_r, self.kernel_r), self.ln_scale_r, self.ln_bias_r)
+            x_h = self.laynorm(K.dot(inputs_h, self.kernel_h), self.ln_scale_h, self.ln_bias_h)
+            
             if self.use_bias:
                 x_z = K.bias_add(x_z, self.bias_z)
                 x_r = K.bias_add(x_r, self.bias_r)
                 x_h = K.bias_add(x_h, self.bias_h)
 
-            z = self.recurrent_activation(x_z + K.dot(h_tm1,
-                                                      self.recurrent_kernel_z))
+            z = self.recurrent_activation(x_z +
+                    self.laynorm(K.dot(h_tm1, self.recurrent_kernel_z), self.ln_scale_rz, self.ln_bias_rz))
             
-            r = self.recurrent_activation(x_r + K.dot(h_tm1,
-                                                      self.recurrent_kernel_r))
+            r = self.recurrent_activation(x_r +
+                   self.laynorm(K.dot(h_tm1, self.recurrent_kernel_r), self.ln_scale_rr, self.ln_bias_rr))
             
-            hh = self.activation(x_h + K.dot(r * h_tm1,
-                                             self.recurrent_kernel_h))
+            hh = self.activation(x_h +
+                     r * self.laynorm(K.dot(h_tm1, self.recurrent_kernel_h), self.ln_scale_rh, self.ln_bias_rh))
         else:
             if 0. < self.dropout < 1.:
                 inputs *= dp_mask[0]
@@ -1447,9 +1521,12 @@ class GRU(RNN):
                  activation='tanh',
                  recurrent_activation='hard_sigmoid',
                  use_bias=True,
+                 use_ln=False,
                  kernel_initializer='glorot_uniform',
                  recurrent_initializer='orthogonal',
                  bias_initializer='zeros',
+                 ln_scale_initializer='ones',
+                 ln_bias_initializer='zeros',
                  kernel_regularizer=None,
                  recurrent_regularizer=None,
                  bias_regularizer=None,
@@ -1485,9 +1562,12 @@ class GRU(RNN):
                        activation=activation,
                        recurrent_activation=recurrent_activation,
                        use_bias=use_bias,
+                       use_ln=use_ln,
                        kernel_initializer=kernel_initializer,
                        recurrent_initializer=recurrent_initializer,
                        bias_initializer=bias_initializer,
+                       ln_scale_initializer=ln_scale_initializer,
+                       ln_bias_initializer=ln_bias_initializer,
                        kernel_regularizer=kernel_regularizer,
                        recurrent_regularizer=recurrent_regularizer,
                        bias_regularizer=bias_regularizer,
